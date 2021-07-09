@@ -52,8 +52,13 @@ impl MatcherTarget {
 
         let mut fs: Vec<_> = field_iter.collect();
         if fs.len() != 1 {
-            // TODO: diagnostic
-            panic!("Only zero or one fields are supported")
+            Diagnostic::spanned(
+                fields.span().unwrap(),
+                Level::Error,
+                "Field count incorrect, only zero or one fields are supported",
+            )
+            .emit();
+            panic!("Disallowed field type");
         }
         let f = fs.pop().unwrap();
         Self {
@@ -65,19 +70,10 @@ impl MatcherTarget {
 
     fn construct(&self, value: Option<TokenStream>) -> TokenStream {
         if value.is_some() {
-            // TODO: diagnostic
             assert!(self.field_name.is_none(), "Field name without value");
         }
 
         if self.field_type.is_none() {
-            // TODO: diagnostic
-            // Diagnostic::spanned(
-            //     group.span().unwrap(),
-            //     Level::Error,
-            //     "Argument count incorrect",
-            // )
-            // .emit();
-            // panic!("Expected exactly two arguments");
             assert!(value.is_none(), "Unit field doesn't take values");
         }
 
@@ -215,7 +211,7 @@ impl ScanMode {
             }
             ScanMode::Fixed(fixed) => {
                 let value = target.construct(if target.field_type.is_some() {
-                    Some(quote! { text })
+                    Some(quote! { #fixed })
                 } else {
                     None
                 });
