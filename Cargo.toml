@@ -1,0 +1,16 @@
+[package]
+name = "minilang"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+lazy_static = "1.4"
+enum_dispatch = "0.3.7"
+strum = {version = "0.21", features = ["derive"]}
+
+serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+
+regex = "1.5"
+
+parsem = {path = "./parsem"}

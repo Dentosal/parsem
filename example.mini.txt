@@ -1,0 +1,13 @@
+Unit = {}
+
+Option := @T => (some: T, none: Unit)
+
+List := @A => {
+    elem: A,
+    rest: Option<List<A>>
+}
+
+append := @A => List(A) => A => List(A)
+append = list => elem => List { elem, rest: list }
+
+map<A, F> := @A => List(A)

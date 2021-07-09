@@ -1,0 +1,17 @@
+{
+    types: {
+        "arguments": {
+            "apply": {
+                "old": "$",
+                "new": "$",
+                "body": "$list",
+            }
+        },
+        "main": {
+            "function": {
+                "takes": "$arguments",
+                "returns": "$integer",
+            }
+        }
+    }
+}
