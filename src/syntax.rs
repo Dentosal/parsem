@@ -3,22 +3,6 @@ use strum::EnumDiscriminants;
 
 use parsem;
 
-#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan, parsem::Node)]
-#[scan(regex r"#.*\n")]
-struct CommentToken(String);
-
-#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan, parsem::Node)]
-#[scan(regex r"[a-z][a-zA-Z0-9_]*")]
-struct ValueName(String);
-
-#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan, parsem::Node)]
-#[scan(regex r"[A-Z][a-zA-Z0-9_]*")]
-struct TypeName(String);
-
-#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan, parsem::Node)]
-#[scan(regex_capture r"@([A-Z][a-zA-Z0-9_]*)")]
-struct GenericArgument(String);
-
 #[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants, parsem::Scan)]
 #[strum_discriminants(name(TokenTextType))]
 pub enum TokenText {
@@ -26,17 +10,21 @@ pub enum TokenText {
     Whitespace,
     #[scan(regex r"//.*\n")]
     TestThing(String),
-    Comment(CommentToken),
-    ValueName(ValueName),
-    TypeName(TypeName),
-    GenericArgument(GenericArgument),
+    #[scan(regex r"#.*\n")]
+    Comment(String),
+    #[scan(regex r"[a-z][a-zA-Z0-9_]*")]
+    ValueName(String),
+    #[scan(regex r"[A-Z][a-zA-Z0-9_]*")]
+    TypeName(String),
+    #[scan(regex_capture r"@([A-Z][a-zA-Z0-9_]*)")]
+    GenericArgument(String),
     #[scan(fixed "(")]
     ParenOpen,
     #[scan(fixed ")")]
     ParenClose,
     #[scan(fixed "[")]
     SquareOpen,
-    #[scan(fixed "}")]
+    #[scan(fixed "]")]
     SquareClose,
     #[scan(fixed "{")]
     CurlyOpen,

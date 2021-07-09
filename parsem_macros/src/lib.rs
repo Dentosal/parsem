@@ -6,7 +6,8 @@ use proc_macro::{Diagnostic, Level};
 use proc_macro2::{self, Ident, Literal, Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{
-    parse_macro_input, AttrStyle, Attribute, DataEnum, DataStruct, DeriveInput, Fields, Type,
+    parse_macro_input, spanned::Spanned, AttrStyle, Attribute, DataEnum, DataStruct, DeriveInput,
+    Fields, Type,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,13 +15,98 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static UNIQUE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
+struct MatcherTarget {
+    /// None on structs
+    variant_name: Option<Ident>,
+    /// None on unnamed fields, i.e. tuple structs
+    field_name: Option<Ident>,
+    /// None on unit structs
+    field_type: Option<Type>,
+}
+impl MatcherTarget {
+    fn span(&self) -> Option<Span> {
+        [
+            self.variant_name.clone().map(|v| v.span()),
+            self.field_name.clone().map(|v| v.span()),
+            self.field_type.clone().map(|v| v.span()),
+        ]
+        .iter()
+        .filter_map(|x| x.clone())
+        .reduce(|a, b| a.join(b).expect("MatcherTarget parts from different files"))
+    }
+
+    /// Extracts field, but only if there is exactly one field
+    fn from_fields(variant_name: Option<Ident>, fields: &Fields) -> Self {
+        let field_iter = match fields {
+            Fields::Unnamed(f) => f.unnamed.iter(),
+            Fields::Named(f) => f.named.iter(),
+            Fields::Unit => {
+                // Unit struct
+                return Self {
+                    variant_name,
+                    field_name: None,
+                    field_type: None,
+                };
+            }
+        };
+
+        let mut fs: Vec<_> = field_iter.collect();
+        if fs.len() != 1 {
+            // TODO: diagnostic
+            panic!("Only zero or one fields are supported")
+        }
+        let f = fs.pop().unwrap();
+        Self {
+            variant_name,
+            field_name: f.ident.clone(),
+            field_type: Some(f.ty.clone()),
+        }
+    }
+
+    fn construct(&self, value: Option<TokenStream>) -> TokenStream {
+        if value.is_some() {
+            // TODO: diagnostic
+            assert!(self.field_name.is_none(), "Field name without value");
+        }
+
+        if self.field_type.is_none() {
+            // TODO: diagnostic
+            // Diagnostic::spanned(
+            //     group.span().unwrap(),
+            //     Level::Error,
+            //     "Argument count incorrect",
+            // )
+            // .emit();
+            // panic!("Expected exactly two arguments");
+            assert!(value.is_none(), "Unit field doesn't take values");
+        }
+
+        if let Some(variant_name) = &self.variant_name {
+            if let Some(value) = value {
+                if let Some(field) = &self.field_name {
+                    quote! { Self::#variant_name { #field: #value } }
+                } else {
+                    quote! { Self::#variant_name(#value) }
+                }
+            } else {
+                quote! { Self::#variant_name }
+            }
+        } else {
+            if let Some(value) = value {
+                if let Some(f_name) = &self.field_name {
+                    quote! { Self { #f_name: #value } }
+                } else {
+                    quote! { Self(#value) }
+                }
+            } else {
+                quote! { Self {} }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 enum ScanMode {
-    /// Use the wrapped type
-    Inner {
-        /// Variant is used to specify enum variant, None for structs
-        variant: Option<Ident>,
-        field: FieldSpecifier,
-    },
     /// Never scan anything to this
     Never,
     Fixed(Literal),
@@ -86,51 +172,36 @@ impl ScanMode {
         }
     }
 
-    fn generate_matcher(&self) -> TokenStream {
+    /// Variant is used to specify enum variant, None for structs
+    fn generate_matcher(&self, target: &MatcherTarget) -> TokenStream {
         match self {
-            ScanMode::Inner { variant, field } => {
-                let t = field.type_.clone();
-                if let Some(v) = variant {
-                    if let Some(f_name) = field.name.clone() {
-                        quote! {
-                            Self::#v { #f_name:  #t::scan() }
-                        }
-                    } else {
-                        quote! {
-                            Self::#v(#t::scan())
-                        }
-                    }
-                } else {
-                    if let Some(f_name) = field.name.clone() {
-                        quote! {
-                            Self { #f_name:  #t::scan() }
-                        }
-                    } else {
-                        quote! {
-                            Self(#t::scan())
-                        }
-                    }
-                }
-            }
             ScanMode::Never => quote! {None},
             ScanMode::Regex(regex) => {
                 let id = UNIQUE_ID.fetch_add(1, Ordering::SeqCst);
                 let re_ident = Ident::new(&format!("__PARSEM_RE_{}", id), Span::call_site());
+                let value = target.construct(if target.field_type.is_some() {
+                    Some(quote! { src[..length].to_owned() })
+                } else {
+                    None
+                });
                 quote! {
                     lazy_static::lazy_static! {
                         static ref #re_ident: Regex = Regex::new(&format!("^{}", #regex)).unwrap();
                     }
                     if let Some(m) = #re_ident.find(src) {
                         let length = m.end();
-                        Some((src[..length].to_owned(), length))
-                    } else {
-                        None
+                        return Some((#value, length));
                     }
                 }
             }
             ScanMode::RegexCapture(regex) => {
                 let id = UNIQUE_ID.fetch_add(1, Ordering::SeqCst);
                 let re_ident = Ident::new(&format!("__PARSEM_RE_{}", id), Span::call_site());
+                let value = target.construct(if target.field_type.is_some() {
+                    Some(quote! { text })
+                } else {
+                    None
+                });
                 quote! {
                     lazy_static::lazy_static! {
                         static ref #re_ident: Regex = Regex::new(&format!("^{}", #regex)).unwrap();
@@ -138,47 +209,24 @@ impl ScanMode {
                     if let Some(m) = #re_ident.captures(src) {
                         let length = m.get(0).unwrap().end();
                         let text = m.get(1).expect("No match found").as_str().to_owned();
-                        Some((text, length))
-                    } else {
-                        None
+                        return Some((#value, length));
                     }
                 }
             }
-            ScanMode::Fixed(fixed) => quote! {
-                if src.starts_with(#fixed) {
-                    let length = #fixed.len();
-                    Some((src[..length].to_owned(), length))
+            ScanMode::Fixed(fixed) => {
+                let value = target.construct(if target.field_type.is_some() {
+                    Some(quote! { text })
                 } else {
                     None
+                });
+                quote! {
+                    if src.starts_with(#fixed) {
+                        let length = #fixed.len();
+                        return Some((#value, length));
+                    }
                 }
-            },
+            }
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FieldSpecifier {
-    name: Option<Ident>,
-    type_: Type,
-}
-impl FieldSpecifier {
-    /// Extracts field, but only if there is exactly one field
-    fn extract_single(fields: &Fields) -> Option<Self> {
-        let field_iter = match fields {
-            Fields::Unnamed(f) => f.unnamed.iter(),
-            Fields::Named(f) => f.named.iter(),
-            Fields::Unit => return None,
-        };
-
-        let mut fs: Vec<_> = field_iter.collect();
-        if fs.len() != 1 {
-            return None;
-        }
-        let f = fs.pop().unwrap();
-        Some(Self {
-            name: f.ident.clone(),
-            type_: f.ty.clone(),
-        })
     }
 }
 
@@ -189,7 +237,7 @@ pub fn macro_scan(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     } = parse_macro_input!(input);
 
     match data {
-        syn::Data::Struct(DataStruct { .. }) => {
+        syn::Data::Struct(DataStruct { fields, .. }) => {
             let mut opts: Vec<_> = attrs.iter().filter_map(ScanMode::from_attr).collect();
             if opts.len() == 0 {
                 panic!("Missing a top level scan attribute");
@@ -197,13 +245,13 @@ pub fn macro_scan(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 panic!("Only one scan attribute is accepted");
             }
 
-            let matcher = opts.pop().unwrap().generate_matcher();
+            let target = MatcherTarget::from_fields(None, &fields);
+            let matcher = opts.pop().unwrap().generate_matcher(&target);
 
             let output = quote! {
                 impl ::parsem::Scannable for #ident {
                     fn scan(src: &str) -> Option<(Self, usize)> {
-                        let (text, length) = {#matcher}?;
-                        Some((Self(text), length))
+                        {#matcher}
                     }
                 }
             };
@@ -215,14 +263,12 @@ pub fn macro_scan(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             for variant in variants {
                 let ident = variant.ident;
-                let field = FieldSpecifier::extract_single(&variant.fields);
-                let mut opts = field
-                    .map(|field| ScanMode::Inner {
-                        variant: Some(ident.clone()),
-                        field,
-                    })
-                    .unwrap_or(ScanMode::Never);
+                let target = MatcherTarget::from_fields(Some(ident), &variant.fields);
 
+                // Default scan mode
+                let mut opts = ScanMode::Never;
+
+                // See if override is specified
                 for attr in variant.attrs {
                     if let Some(m) = ScanMode::from_attr(&attr) {
                         opts = m;
@@ -230,19 +276,12 @@ pub fn macro_scan(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     }
                 }
 
-                opts_per_variant.push((ident, opts));
+                opts_per_variant.push((target, opts));
             }
 
             let alternatives: Vec<_> = opts_per_variant
                 .iter()
-                .map(|(variant, opts)| {
-                    let matcher = opts.generate_matcher();
-                    quote! {
-                        if let Some((text, length)) = {#matcher} {
-                            return (Self::#variant(text), length);
-                        }
-                    }
-                })
+                .map(|(target, opts)| opts.generate_matcher(target))
                 .collect();
 
             let output = quote! {
