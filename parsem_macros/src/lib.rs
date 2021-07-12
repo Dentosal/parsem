@@ -231,9 +231,9 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             let parsed = #type_::match_parse(&tokens[index..]);
                             if parsed.parsed.is_some() {
                                 ::log::trace!("Matched case");
-                                return parsed.map(|(v, c)| (Self::#vname(v), c));
+                                return parsed.map(Self::#vname);
                             } else if let Some(err) = parsed.error {
-                                variant_errors.push((stringify!(#vname), err));
+                                variant_errors.push((parsed.token_count, stringify!(#vname), err));
                             }
                         };
                     }
@@ -257,17 +257,17 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         ::log::trace!("No cases matched");
                         let mut ve = variant_errors
                             .iter()
-                            .map(|(a, b)| (b.depth(), a, b.clone()))
+                            .map(|(tc, a, b)| (tc, a, b.clone()))
                             .collect::<Vec<_>>();
                         ve.sort_by(|a, b| a.0.cmp(&b.0));
 
                         let mut res = ::parsem::ParseResult::empty();
 
-                        // if let Some((x, best_vname, best_error)) = ve.pop() {
-                        //     dbg!(x, best_vname);
-                        //     res = res.add_err(best_error);
-                        //     res = res.add_err(::parsem::ParseError::new(format!("Best guess: {}", best_vname)));
-                        // }
+                        if let Some((token_count, best_vname, best_error)) = ve.pop() {
+                            res.token_count = *token_count;
+                            res = res.add_err(best_error);
+                            res = res.add_err(::parsem::ParseError::new(format!("Best guess: {}", best_vname)));
+                        }
 
                         res.add_err(::parsem::ParseError::new("None of the variants matched".to_owned()))
                     }
@@ -296,7 +296,7 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         -> ::parsem::ParseResult<Self> {
                             if let Some(token) = tokens.first() {
                                 if token.type_ == #token_type_type::#variant {
-                                    return ::parsem::ParseResult::new((Self { token: token.clone() }, 1));
+                                    return ::parsem::ParseResult::new(Self { token: token.clone() }, 1);
                                 }
                                 ::log::trace!("No match: expected {} got {:?}",
                                     stringify!(#variant), token.type_);
@@ -353,12 +353,12 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                         stringify!(#root_ident), stringify!(#ident), stringify!(#type_)
                                     );
                                     let parsed = <#type_>::match_parse(&tokens[index..]);
-                                    if let Some((value, length)) = parsed.parsed {
+                                    if let Some(value) = parsed.parsed {
                                         #include_opt;
                                         ::log::trace!("Matched field {}.{}",
                                             stringify!(#root_ident), stringify!(#ident)
                                         );
-                                        index += length;
+                                        index += parsed.token_count;
                                         value
                                     } else {
                                         ::log::trace!("No match for field {}.{}",
@@ -367,14 +367,18 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                         let mut errmsg = format!("Field {}.{} did not match {}",
                                             stringify!(#root_ident), stringify!(#ident), stringify!(#type_)
                                         );
+
                                         if !optionals.is_empty() {
                                             errmsg.push_str(&format!(" or optionals {:?}", optionals));
                                         }
 
-                                        return parsed.without_value().add_err(
-                                            ::parsem::ParseError::new(errmsg)
+                                        return ::parsem::ParseResult {
+                                            parsed: None,
+                                            token_count: parsed.token_count + index,
+                                            error: Some(::parsem::ParseError::new(errmsg)
                                                 .with_location(tokens[index].location.clone())
-                                        );
+                                                .with_parent(parsed.error.unwrap()))
+                                        };
                                     }
                                 };
                             }
@@ -396,7 +400,8 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                     #( #matchers )*
                                     ::log::trace!("Matched struct {}", stringify!(#root_ident));
                                     ::parsem::ParseResult {
-                                        parsed: Some((Self { #( #field_names ),* }, index)),
+                                        parsed: Some(Self { #( #field_names ),* }, ),
+                                        token_count: index,
                                         error: None // TODO
                                     }
                                 }

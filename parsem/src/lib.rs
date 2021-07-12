@@ -95,7 +95,7 @@ impl<T> ParseResult<T> {
     pub fn without_value<R>(self) -> ParseResult<R> {
         ParseResult {
             parsed: None,
-            token_count: 0,
+            token_count: self.token_count,
             error: self.error,
         }
     }
@@ -139,7 +139,7 @@ where
 /// Boxed field
 impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Box<T> {
     fn match_parse(tokens: &[Token<TT>]) -> ParseResult<Self> {
-        T::match_parse(&tokens).map(|(value, count)| (Box::new(value), count))
+        T::match_parse(&tokens).map(Box::new)
     }
 }
 
@@ -172,9 +172,7 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
         let mut result = Vec::new();
         let mut index = 0;
         let mut item_error = None;
-        println!("Vecmatch {}", std::any::type_name::<T>());
         while index < tokens.len() {
-            println!("Vec i={}", index);
             ::log::trace!(
                 "Matching vec i={}, t={:?}",
                 index,
@@ -183,21 +181,17 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
                     .map(|t| t.text.clone())
                     .collect::<Vec<_>>()
             );
-            println!("Vec? match {}..", &tokens[0].text);
             let item = T::match_parse(&tokens[index..]);
             if let Some(err) = item.error {
-                println!("Vec: set error {}", err);
                 item_error = Some(err);
             }
-            if let Some((value, token_count)) = item.parsed {
+            if let Some(value) = item.parsed {
                 // repeated empty field?
                 // TODO: better error for this
-                assert_ne!(token_count, 0);
-                println!("Vec: matched {:?}", value);
+                assert_ne!(item.token_count, 0);
                 result.push(value);
-                index += token_count;
+                index += item.token_count;
             } else {
-                println!("Vec: no match");
                 ::log::trace!(
                     "No match for vec item {} {:?}",
                     std::any::type_name::<T>(),
@@ -215,7 +209,6 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
         }
 
         if result.is_empty() {
-            println!("Vec empty");
             let mut err = ParseError::new(format!(
                 "Empty repetition of {}",
                 std::any::type_name::<T>()
@@ -224,7 +217,9 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
             if let Some(e) = item_error {
                 err = err.with_parent(e);
             }
-            ParseResult::error(err)
+            let mut r = ParseResult::error(err);
+            r.token_count = index;
+            r
         } else {
             println!("Vec done");
             ::log::trace!(
@@ -237,7 +232,8 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
                 result.len()
             );
             ParseResult {
-                parsed: Some((result, index)),
+                parsed: Some(result),
+                token_count: index,
                 error: item_error,
             }
         }
@@ -265,8 +261,8 @@ macro_rules! tuple_impls {
                             .collect::<Vec<_>>()
                     );
                     let parsed = $name::match_parse(&tokens[index..]);
-                    if let Some((value, token_count)) = parsed.parsed {
-                        index += token_count;
+                    if let Some(value) = parsed.parsed {
+                        index += parsed.token_count;
                         value
                     } else {
                         return parsed.without_value().add_err(

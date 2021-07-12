@@ -32,10 +32,10 @@ fn main() {
     tokens.drain_filter(|t| [TokenType::Whitespace, TokenType::Comment].contains(&t.type_));
 
     let parsed = syntax::Module::match_parse(&tokens);
-    if let Some((module, count)) = parsed.parsed {
+    if let Some(module) = parsed.parsed {
         println!("{:#?}", module);
-        println!("{:?} {:?}", count, tokens.len());
-        assert!(count == tokens.len(), "Unparsed end of output");
+        println!("{:?} {:?}", parsed.token_count, tokens.len());
+        assert!(parsed.token_count == tokens.len(), "Unparsed end of output");
     } else {
         println!("{}", parsed.error.unwrap());
     }
