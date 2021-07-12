@@ -1,0 +1,22 @@
+# fn add(a: Integer, b: Integer) -> Integer {
+#     if eq(a, 0) {
+#         return b;
+#     }
+#     let c = add(dec(a), inc(b));
+#     return c;
+# }
+
+# fn str_eq(a: Pointer(Integer), b: Pointer(Integer)) -> Boolean {
+fn str_eq() -> Boolean {
+    # while true {
+        # let v: Integer = deref(a);
+        # if not(eq(v, deref(b))) {
+        #     return false;
+        # }
+
+        return true
+
+        # a = next(a);
+        # b = next(b);
+    # }
+}

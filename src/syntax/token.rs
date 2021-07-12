@@ -3,21 +3,36 @@ use strum::EnumDiscriminants;
 
 use parsem;
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants, parsem::Scan)]
-#[strum_discriminants(name(TokenTextType))]
-pub enum TokenText {
+pub use parsem::Location;
+
+#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan)]
+pub enum TokenType {
     #[scan(regex r"\s+")]
     Whitespace,
-    #[scan(regex r"//.*\n")]
-    TestThing(String),
     #[scan(regex r"#.*\n")]
-    Comment(String),
+    Comment,
+    #[scan(regex r"fn\b")]
+    KeywordFn,
+    #[scan(regex r"return\b")]
+    KeywordReturn,
+    #[scan(regex r"let\b")]
+    KeywordLet,
+    #[scan(regex r"if\b")]
+    KeywordIf,
+    #[scan(regex r"else\b")]
+    KeywordElse,
+    #[scan(regex r"while\b")]
+    KeywordWhile,
+    #[scan(regex r"break\b")]
+    KeywordBreak,
+    #[scan(regex r"continue\b")]
+    KeywordContinue,
     #[scan(regex r"[a-z][a-zA-Z0-9_]*")]
-    ValueName(String),
+    ValueName,
     #[scan(regex r"[A-Z][a-zA-Z0-9_]*")]
-    TypeName(String),
-    #[scan(regex_capture r"@([A-Z][a-zA-Z0-9_]*)")]
-    GenericArgument(String),
+    TypeName,
+    #[scan(regex r"[0-9]([0-9]*[0-9])?")]
+    LiteralInteger,
     #[scan(fixed "(")]
     ParenOpen,
     #[scan(fixed ")")]
@@ -34,27 +49,16 @@ pub enum TokenText {
     AngleOpen,
     #[scan(fixed ">")]
     AngleClose,
-    #[scan(fixed "=>")]
+    #[scan(fixed "->")]
     Arrow,
-    #[scan(fixed ":=")]
-    AssignType,
     #[scan(fixed "=")]
-    AssignValue,
+    AssignOp,
+    #[scan(fixed ";")]
+    Semicolon,
     #[scan(fixed ":")]
     Colon,
     #[scan(fixed ",")]
     Comma,
 }
 
-#[derive(Debug, Clone)]
-pub struct Location {
-    file: String,
-    offset: usize,
-    length: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct Token {
-    text: TokenText,
-    location: Location,
-}
+pub type Token = parsem::Token<TokenType>;

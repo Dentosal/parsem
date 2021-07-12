@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
 name = "enum_dispatch"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -45,6 +51,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
+name = "log"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "memchr"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -56,6 +71,7 @@ version = "0.1.0"
 dependencies = [
  "enum_dispatch",
  "lazy_static",
+ "log",
  "parsem",
  "regex",
  "serde",
@@ -73,6 +89,7 @@ checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 name = "parsem"
 version = "0.1.0"
 dependencies = [
+ "log",
  "parsem_macros",
 ]
 
