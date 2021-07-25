@@ -129,17 +129,22 @@ impl<T> ParseResult<T> {
     }
 }
 
-pub trait Parsable<T: Eq>
+pub trait Parsable<TT: Eq>
 where
     Self: Sized + std::fmt::Debug,
 {
-    fn match_parse(tokens: &[Token<T>]) -> ParseResult<Self>;
+    fn match_parse(tokens: &[Token<TT>]) -> ParseResult<Self>;
+    fn tokens(&self) -> Vec<Token<TT>>;
 }
 
 /// Boxed field
 impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Box<T> {
     fn match_parse(tokens: &[Token<TT>]) -> ParseResult<Self> {
         T::match_parse(&tokens).map(Box::new)
+    }
+
+    fn tokens(&self) -> Vec<Token<TT>> {
+        (*self).tokens()
     }
 }
 
@@ -163,6 +168,10 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Option<T> {
                 error: result.error,
             }
         }
+    }
+
+    fn tokens(&self) -> Vec<Token<TT>> {
+        self.as_ref().map(|v| v.tokens()).unwrap_or(Vec::new())
     }
 }
 
@@ -238,10 +247,18 @@ impl<TT: Eq, T: Parsable<TT>> Parsable<TT> for Vec<T> {
             }
         }
     }
+
+    fn tokens(&self) -> Vec<Token<TT>> {
+        let mut result = Vec::new();
+        for item in self {
+            result.extend(item.tokens());
+        }
+        result
+    }
 }
 
 macro_rules! tuple_impls {
-    ( $( $name:ident ),+ ) => {
+    ( $( $name:ident $index:tt ),+ ) => {
         impl<TT: Eq, $($name: Parsable<TT>),+> Parsable<TT> for ($($name,)+)
         {
            fn match_parse(tokens: &[Token<TT>]) -> $crate::ParseResult<Self> {
@@ -289,23 +306,28 @@ macro_rules! tuple_impls {
                     error: None,
                 }
             }
+            fn tokens(&self) -> Vec<Token<TT>> {
+                let mut result = Vec::new();
+                $( result.extend(self.$index.tokens()); )*
+                result
+            }
         }
     };
 }
 
-tuple_impls!(F1);
-tuple_impls!(F1, F2);
-tuple_impls!(F1, F2, F3);
-tuple_impls!(F1, F2, F3, F4);
+tuple_impls!(T0 0);
+tuple_impls!(T0 0, T1 1);
+tuple_impls!(T0 0, T1 1, T2 2);
+tuple_impls!(T0 0, T1 1, T2 2, T3 3);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Location {
     pub file: String,
     pub offset: usize,
     pub length: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Token<T: Eq> {
     pub location: Location,
     pub type_: T,
@@ -315,11 +337,16 @@ pub struct Token<T: Eq> {
 #[macro_export]
 macro_rules! token_wrapper {
     ($ttype: ident; $($name: ident),+ $(,)?) => {$(
-        #[derive(Debug, Clone, Node)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Node)]
         #[token_type($ttype)]
         #[single($name)]
         pub struct $name {
-            token: ::parsem::Token<$ttype>,
+            pub token: ::parsem::Token<$ttype>,
         }
+        // impl $name {
+        //     pub fn tokens(&self) -> Vec<::parsem::Token<$ttype>> {
+        //         vec![self.token.clone()]
+        //     }
+        // }
     )*};
 }

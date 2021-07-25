@@ -5,7 +5,7 @@ use parsem;
 
 pub use parsem::Location;
 
-#[derive(Debug, Clone, PartialEq, Eq, parsem::Scan)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, parsem::Scan)]
 pub enum TokenType {
     #[scan(regex r"\s+")]
     Whitespace,

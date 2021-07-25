@@ -246,6 +246,7 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .emit();
                 panic!("Variant should have only a single unnamed item");
             });
+            let vars = variants.iter().map(|v| v.ident.clone());
             let output = quote! {
                 impl #impl_generics ::parsem::Parsable<#token_type_type> for #root_ident #ty_generics
                 #where_clause {
@@ -270,6 +271,11 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         }
 
                         res.add_err(::parsem::ParseError::new("None of the variants matched".to_owned()))
+                    }
+                    fn tokens(&self) -> Vec<::parsem::Token<#token_type_type>> {
+                        match self {
+                            #( Self::#vars(f) => f.tokens(), )*
+                        }
                     }
                 }
             };
@@ -313,6 +319,9 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                     format!("Expected {:?} but encountered EOF", stringify!(#variant))
                                 ))
                             }
+                        }
+                        fn tokens(&self) -> Vec<::parsem::Token<#token_type_type>> {
+                            vec![self.token.clone()]
                         }
                     }
                 };
@@ -384,7 +393,8 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                             }
                         });
 
-                        let field_names = fs.named.iter().map(|f| f.ident.clone().unwrap());
+                        let field_names: Vec<_> =
+                            fs.named.iter().map(|f| f.ident.clone().unwrap()).collect();
 
                         let output = quote! {
                             impl #impl_generics ::parsem::Parsable<#token_type_type> for #root_ident #ty_generics
@@ -404,6 +414,11 @@ pub fn macro_node(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                                         token_count: index,
                                         error: None // TODO
                                     }
+                                }
+                                fn tokens(&self) -> Vec<::parsem::Token<#token_type_type>> {
+                                    let mut result = Vec::new();
+                                    #( result.extend(self.#field_names.tokens()); )*
+                                    result
                                 }
                             }
                         };
